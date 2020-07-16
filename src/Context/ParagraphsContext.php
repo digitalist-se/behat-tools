@@ -1,5 +1,7 @@
 <?php
 
+namespace digitalistse\BehatTools\Context;
+
 use Behat\Behat\Context\SnippetAcceptingContext;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\TableNode;
