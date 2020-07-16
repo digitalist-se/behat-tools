@@ -2,18 +2,13 @@
 
 namespace digitalistse\BehatTools\Context;
 
-use Behat\Behat\Context\SnippetAcceptingContext;
 use Behat\Behat\Definition\Call\Then;
 use Behat\Behat\Hook\Scope\AfterScenarioScope;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\TableNode;
 use Behat\Mink\Exception\ExpectationException;
-use Drupal\DrupalExtension\Context\RawDrupalContext;
-use Drupal\node\Entity\Node;
-use Drupal\paragraphs\Entity\Paragraph;
-use Drupal\user\Entity\User;
 
-class CommonContext extends RawDrupalContext implements SnippetAcceptingContext {
+class CommonContext implements Context {
 
   /**
    * @Given I click the :arg1 element
