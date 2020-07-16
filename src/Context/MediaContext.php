@@ -2,7 +2,6 @@
 
 namespace digitalistse\BehatTools\Context;
 
-use Behat\Behat\Context\SnippetAcceptingContext;
 use Drupal\Component\Utility\Random;
 use Drupal\DrupalExtension\Context\RawDrupalContext;
 use Drupal\media\Entity\Media;
@@ -12,7 +11,7 @@ use Drupal\media\Entity\Media;
  *
  * @package behat\features\bootstrap
  */
-class MediaContext extends RawDrupalContext implements SnippetAcceptingContext {
+class MediaContext extends RawDrupalContext {
 
   /**
    * @var bool|\stdClass|\stdClass[]

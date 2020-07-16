@@ -2,7 +2,6 @@
 
 namespace digitalistse\BehatTools\Context;
 
-use Behat\Behat\Context\SnippetAcceptingContext;
 use Drupal\DrupalExtension\Context\RawDrupalContext;
 
 /**
@@ -10,7 +9,7 @@ use Drupal\DrupalExtension\Context\RawDrupalContext;
  *
  * @package behat\features\bootstrap
  */
-class QueueContext extends RawDrupalContext implements SnippetAcceptingContext {
+class QueueContext extends RawDrupalContext {
 
   /**
    * @Given /^I delete all items from the "([^"]*)" queue$/

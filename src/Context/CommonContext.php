@@ -2,14 +2,14 @@
 
 namespace digitalistse\BehatTools\Context;
 
-use Behat\Behat\Context\Context;
 use Behat\Behat\Definition\Call\Then;
 use Behat\Behat\Hook\Scope\AfterScenarioScope;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\TableNode;
 use Behat\Mink\Exception\ExpectationException;
+use Drupal\DrupalExtension\Context\RawDrupalContext;
 
-class CommonContext implements Context {
+class CommonContext extends RawDrupalContext {
 
   /**
    * @Given I click the :arg1 element

@@ -2,7 +2,6 @@
 
 namespace digitalistse\BehatTools\Context;
 
-use Behat\Behat\Context\SnippetAcceptingContext;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\TableNode;
 use Drupal\DrupalExtension\Context\RawDrupalContext;
@@ -14,7 +13,7 @@ use Drupal\paragraphs\Entity\Paragraph;
  *
  * @package behat\features\bootstrap
  */
-class ParagraphsContext extends RawDrupalContext implements SnippetAcceptingContext {
+class ParagraphsContext extends RawDrupalContext {
 
   /**
    * @var \Drupal\DrupalExtension\Context\DrupalContext
