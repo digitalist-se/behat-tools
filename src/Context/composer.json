@@ -1,0 +1,29 @@
+
+{
+    "name": "digitalist-se/behat-tools",
+    "description": "Behat tools",
+    "keywords": ["BDD", "Behat", "Drupal 8", "Context"],
+    "type": "package",
+    "license": "GPL-3.0",
+    "minimum-stability": "dev",
+    "authors":[
+        {
+            "name":"Digitalist Sweden",
+            "email":"jose.jimenez@digitalistgroup.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "digitalistse\\BehatTools\\": "src"
+        }
+    },
+    "require": {
+        "php": ">=7.2",
+        "behat/behat": "^3.0.13",
+        "behat/mink-extension": "^2.3.1"
+    },
+    "require-dev": {
+        "behat/mink-goutte-driver": "^1.1",
+        "digtitalist-se/behat-tools": "dev-master"
+    }
+}
