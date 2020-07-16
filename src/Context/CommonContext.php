@@ -2,6 +2,7 @@
 
 namespace digitalistse\BehatTools\Context;
 
+use Behat\Behat\Context\Context;
 use Behat\Behat\Definition\Call\Then;
 use Behat\Behat\Hook\Scope\AfterScenarioScope;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
