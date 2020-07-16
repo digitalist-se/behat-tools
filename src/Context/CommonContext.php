@@ -415,3 +415,4 @@ JS;
     $element->click();
 
   }
+}
