@@ -258,7 +258,7 @@ JS;
    * @param \Behat\Behat\Hook\Scope\AfterScenarioScope $scope
    */
   public function afterEuCookieComplianceScenario(AfterScenarioScope $scope) {
-    \Drupal::service('module_installer')->uninstall(['eu_cookie_compliance']);
+    \Drupal::service('module_installer')->install(['eu_cookie_compliance']);
   }
 
   /**
