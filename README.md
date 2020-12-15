@@ -14,7 +14,7 @@ Add this to the `repositories` section of your `composer.json`
 
 Execute:
 ```
-composer require digitalist-se/behat-tools
+composer require --dev digitalist-se/behat-tools
 ```
 
 Add to your `behat.yml`:
