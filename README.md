@@ -5,7 +5,7 @@ Behat related tools
 
 Add this to the `repositories` section of your `composer.json`
 
-```
+```json
         {
             "type": "vcs",
             "url": "https://github.com/digitalist-se/behat-tools"
@@ -13,12 +13,12 @@ Add this to the `repositories` section of your `composer.json`
 ```
 
 Execute:
-```
+```sh
 composer require --dev digitalist-se/behat-tools
 ```
 
 Add to your `behat.yml`:
-```
+```yml
 default:
   suites:
     default:
@@ -46,7 +46,7 @@ default:
               read_date: 'Y-m-d\TH:i:s'
 ```
 In that case you could use relative date in php format like:
-```
+```gherkin
 Given a "license_tracker" entity exists with the properties:
       | label | status | uid:user:mail       | field_license:license:title | created     | activated   | expire  | first_notification | second_notification | service_requirement_expired |
       | TRK10 | 1      | license-01@test.com | Test license 1              | 6 month ago | 6 month ago | 91 days | tomorrow           | 61 days             | tomorrow                    |
