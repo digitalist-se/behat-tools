@@ -54,6 +54,25 @@ Given a "license_tracker" entity exists with the properties:
       | TRK10 | 1      | license-03@test.com | Test license 1              | 6 month ago | 6 month ago | 89 days | yesterday          | 59 days             | tomorrow                    |
 ```
 
+**Entity fields support**  
+
+Entity fields are supported like in the following example: `(<field_type>) <field_name>.<field_property>`
+
+- Field with simple structure (e.g.: boolean, textfield, etc.): `field_archived.value`
+- Field type with more complex structure: `(daterange) field_date.value`
+
+> NOTE: Only `daterange` type is supported at the moment. If you need to support more complex fields you can
+> add processing to `EntityContext::processEntityFields`.
+
+Example using entity fields and properties
+```gherkin
+Given a "license_tracker" entity exists with the properties:
+      | label | status | uid:user:mail       | field_archived.value | (daterange) field_date.value | (daterange) field_date.end_value |
+      | TRK10 | 1      | license-01@test.com | 1                    | 6 month ago                  | 6 month ago                      |
+      | TRK10 | 1      | license-02@test.com | 0                    | 6 month ago                  | 6 month ago                      |
+      | TRK10 | 1      | license-03@test.com | 1                    | 6 month ago                  | 6 month ago                      |
+```
+
 # Screenshot Context
 
 You can set different parameters in your behat.yml like this:

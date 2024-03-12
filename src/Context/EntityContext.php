@@ -88,6 +88,7 @@ class EntityContext extends RawDrupalContext {
           $row[$property] = $this->convertDate($value, self::$datetimeFormat[$entity_type][$property]);
         }
       }
+      $this->processEntityFields($row, $entity_type);
       $this->entityTypeManager->getStorage($entity_type)
         ->create($row)->save();
     }
@@ -213,6 +214,38 @@ class EntityContext extends RawDrupalContext {
         }
         $entity->set($property, $row[$property]);
         $entity->save();
+      }
+    }
+  }
+
+  /**
+   * Process and transform entity fields using dot notation.
+   *
+   * @param array $row
+   *   Current row processed.
+   * @param string $entity_type
+   *   Entity type.
+   *
+   * @return void
+   */
+  private function processEntityFields(array &$row, string $entity_type): void {
+    foreach ($row as $property => $value) {
+      if ($value && preg_match('/^(?:\((?<type>[^)]+)\)\s*)?(?<field_name>[^-.]+)\.(?<field_property>[^-.]+)/', $property, $matches)) {
+        $type = $matches['type'] ?? NULL;
+        $field_name = $matches['field_name'] ?? NULL;
+        $field_property = $matches['field_property'] ?? NULL;
+
+        if (!$field_name) {
+          continue;
+        }
+
+        switch ($type) {
+          case 'daterange':
+            $row[$field_name][$field_property] = $this->convertDate($value, self::$datetimeFormat[$entity_type][$field_name]);
+            break;
+          default:
+            $row[$field_name][$field_property] = $value;
+        }
       }
     }
   }
