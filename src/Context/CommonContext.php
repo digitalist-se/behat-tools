@@ -328,13 +328,34 @@ JS;
     $this->getSession()->evaluateScript($drop_file_script);
     // Wait for the IEF to appear
     $page = $this->getSession()->getPage();
-    $page->waitFor(5000,
+    $this->waitFor(5000,
       function () use ($page) {
-        sleep(1);
+        sleep(3);
         $element = $page->findById('ief-dropzone-upload');
         return $element && $element->isVisible();
       }
     );
+  }
+
+  public function waitFor($timeout, $callback){
+    if (!is_callable($callback)) {
+      throw new \InvalidArgumentException('Given callback is not a valid callable');
+    }
+
+    $start = microtime(TRUE);
+    $end = $start + $timeout;
+
+    do {
+      $result = call_user_func($callback, $this);
+
+      if ($result) {
+        break;
+      }
+
+      usleep(10000);
+    } while (microtime(TRUE) < $end);
+
+    return $result;
   }
 
   /**
@@ -413,7 +434,7 @@ JS;
     $element->click();
 
   }
-  
+
   /**
    * @Then /^the "(?P<select>(?:[^"]|\\")*)" select should contain "(?P<option>(?:[^"]|\\")*)"$/
    */
