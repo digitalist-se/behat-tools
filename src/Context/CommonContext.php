@@ -413,4 +413,44 @@ JS;
     $element->click();
 
   }
+  
+  /**
+   * @Then /^the "(?P<select>(?:[^"]|\\")*)" select should contain "(?P<option>(?:[^"]|\\")*)"$/
+   */
+  public function theSelectShouldContain($select, $option) {
+    $selectElement = $this->getSession()->getPage()->findField($select);
+
+    if (!$selectElement) {
+      throw new \Exception(sprintf('The select "%s" was not found on the page', $select));
+    }
+
+    $options = $selectElement->findAll('css', 'option');
+    $optionValues = array_map(function($option) {
+      return $option->getText();
+    }, $options);
+
+    if (!in_array($option, $optionValues)) {
+      throw new \Exception(sprintf('The select "%s" does not contain the option "%s"', $select, $option));
+    }
+  }
+
+  /**
+   * @Then /^the "(?P<select>(?:[^"]|\\")*)" select should not contain "(?P<option>(?:[^"]|\\")*)"$/
+   */
+  public function theSelectShouldNotContain($select, $option) {
+    $selectElement = $this->getSession()->getPage()->findField($select);
+
+    if (!$selectElement) {
+      throw new \Exception(sprintf('The select "%s" was not found on the page', $select));
+    }
+
+    $options = $selectElement->findAll('css', 'option');
+    $optionValues = array_map(function($option) {
+      return $option->getText();
+    }, $options);
+
+    if (in_array($option, $optionValues)) {
+      throw new \Exception(sprintf('The select "%s" contains the option "%s", but it should not', $select, $option));
+    }
+  }
 }
