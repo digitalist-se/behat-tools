@@ -273,22 +273,23 @@ JS;
    * @Then I fill in wysiwyg on field :locator with :value
    */
   public function iFillInWysiwygOnFieldWith($locator, $value) {
-    $el = $this->getSession()->getPage()->findField($locator);
-
-    if (empty($el)) {
-      throw new ExpectationException('Could not find WYSIWYG with locator: ' . $locator, $this->getSession());
-    }
-
-    $fieldId = $el->getAttribute('id');
-
-    if (empty($fieldId)) {
-      throw new Exception('Could not find an id for field with locator: ' . $locator);
-    }
-
+    $editor = "div.js-form-item-$locator-0-value .ck-editor__editable";
     $this->getSession()
-      ->executeScript("CKEDITOR.instances[\"$fieldId\"].setData(\"$value\");");
+      ->executeScript(
+        "
+        var domEditableElement = document.querySelector(\"$editor\");
+        if (domEditableElement.ckeditorInstance) {
+          const editorInstance = domEditableElement.ckeditorInstance;
+          if (editorInstance) {
+            editorInstance.setData(\"$value\");
+          } else {
+            throw new Exception('Could not get the editor instance!');
+          }
+        } else {
+          throw new Exception('Could not find the element!');
+        }
+        ");
   }
-
 
   /**
    * @When /^I switch to the "([^"]*)" IFrame$/
