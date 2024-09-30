@@ -62,6 +62,9 @@ class ScreenshotContext extends RawDrupalContext implements Context {
     $this->getSession()->resizeWindow(1980, 1080, 'current');
   }
 
+  /**
+   * @Then /^take a full-page screenshot with name "([^"]*)"$/
+   */
   public function takeAFullPageScreenshotWithName($name) {
     \Drupal::service('file_system')->prepareDirectory($this->screenshotPath, FileSystemInterface::CREATE_DIRECTORY);
 
