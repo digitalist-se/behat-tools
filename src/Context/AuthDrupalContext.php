@@ -47,6 +47,7 @@ class AuthDrupalContext extends RawDrupalContext {
 
     // Clear the browser's cookies to ensure the session is cleared
     $this->getSession()->restart();
+    $this->getSession()->resizeWindow(1980, 1080, 'current');
 
     // Navigate to the stored URL
     $this->visitPath($this->currentUrl);
