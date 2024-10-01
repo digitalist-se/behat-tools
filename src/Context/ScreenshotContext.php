@@ -71,6 +71,9 @@ class ScreenshotContext extends RawDrupalContext implements Context {
     $session = $this->getSession();
     $driver = $session->getDriver();
 
+    // Get the original scroll position
+    $originalScrollPosition = $session->evaluateScript('return window.pageYOffset || document.documentElement.scrollTop');
+
     // Get page height and viewport height using JavaScript
     $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
     $viewportHeight = $session->evaluateScript('return window.innerHeight');
@@ -95,7 +98,10 @@ class ScreenshotContext extends RawDrupalContext implements Context {
       $segment++;
     }
 
-    // Restore window size after taking the full-page screenshot
+    // Scroll back to the original position after taking the full-page screenshot
+    $session->executeScript("window.scrollTo(0, {$originalScrollPosition});");
+
+    // Restore window size after taking the full-page screenshot (if needed)
     $this->getSession()->resizeWindow(1980, 1080, 'current');
   }
 
