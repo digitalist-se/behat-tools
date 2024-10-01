@@ -1,5 +1,7 @@
 <?php
 
+namespace digitalistse\BehatTools\Context;
+
 use Behat\Gherkin\Node\TableNode;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\DrupalExtension\Context\RawDrupalContext;
