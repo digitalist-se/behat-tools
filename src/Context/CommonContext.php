@@ -245,20 +245,19 @@ JS;
   }
 
 
-  /**
-   * @BeforeScenario @eu_cookie_compliance
-   * @param \Behat\Behat\Hook\Scope\BeforeScenarioScope $scope
-   */
-  public function beforeEuCookieComplianceScenario(BeforeScenarioScope $scope) {
+  /** @BeforeSuite */
+  public static function beforeSuite(BeforeSuiteScope $scope)
+  {
     \Drupal::service('module_installer')->uninstall(['eu_cookie_compliance']);
+    echo "Module eu_cookie_compliance uninstalled";
   }
 
-  /**
-   * @AfterScenario @eu_cookie_compliance
-   * @param \Behat\Behat\Hook\Scope\AfterScenarioScope $scope
-   */
-  public function afterEuCookieComplianceScenario(AfterScenarioScope $scope) {
+
+  /** @AfterSuite */
+  public static function afterSuite(AfterSuiteScope $scope)
+  {
     \Drupal::service('module_installer')->install(['eu_cookie_compliance']);
+    echo "Module eu_cookie_compliance installed back";
   }
 
   /**
@@ -418,8 +417,7 @@ JS;
    *
    * @Given /^I click on the element with xpath "([^"]*)"$/
    */
-  public function iClickOnTheElementWithXPath($xpath)
-  {
+  public function iClickOnTheElementWithXPath($xpath) {
     $session = $this->getSession(); // get the mink session
     $element = $session->getPage()->find(
       'xpath',
@@ -427,7 +425,7 @@ JS;
     ); // runs the actual query and returns the element
 
     // errors must not pass silently
-    if (null === $element) {
+    if (NULL === $element) {
       throw new \InvalidArgumentException(sprintf('Could not evaluate XPath: "%s"', $xpath));
     }
 
