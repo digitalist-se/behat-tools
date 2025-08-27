@@ -75,23 +75,49 @@ Given a "license_tracker" entity exists with the properties:
 
 # Screenshot Context
 
-You can set different parameters in your behat.yml like this:
+The `ScreenshotContext` needs display sizes declared in your `behat.yml` under the suite settings key `screenshot_context`. Define a desktop size and any number of named mobile devices to ensure predictable, comparable screenshots.
+
+Recommended configuration:
+```yml
+default:
+  suites:
+    default:
+      contexts:
+        - digitalistse\BehatTools\Context\ScreenshotContext
+      screenshot_context:
+        screenshot_path: '%paths.base%/screenshots-build'   # required
+        desktop_size:                                       # strongly recommended
+          width: 1920
+          height: 1080
+        mobile_devices:                                     # optional, add any devices you want
+          iphone8:
+            width: 375
+            height: 667
+          ipad:
+            width: 768
+            height: 1024
+        desktop_subfolder: 'desktop'                        # optional (default: desktop)
+        mobile_subfolder: 'mobile'                          # optional (default: mobile)
+```
+
+Notes:
+- One desktop screenshot is always taken using `desktop_size` (defaults to 1920x1080 if not set).
+- One additional screenshot is taken per entry in `mobile_devices`, saved under the `mobile_subfolder` using the device name in the filename.
+- If no `mobile_devices` are configured, only the desktop screenshot is produced.
+
+Legacy configuration (backwards compatibility):
 ```yml
 default:
   suites:
     default:
       screenshot_context:
         screenshot_path: '%paths.base%/screenshots-build'
-        do_resizing: true
         display_sizes:
-          mobile:
-            width: 375
-            height: 667
-          tablet:
-            width: 768
-            height: 1024
           desktop:
             width: 1920
             height: 1080
+          mobile:
+            width: 375
+            height: 667
 ```
-Setting resizing to true will create the amount of screenshots that are in the display_sizes. IF you are going to compare the screenshots, this might be a problem because of the resizing.
+When using `display_sizes`, the desktop size is read from `display_sizes.desktop`, and a single mobile device named `mobile` is inferred from `display_sizes.mobile`. Other keys (e.g. `tablet`) are ignored by the current implementation. Prefer the recommended `desktop_size` + `mobile_devices` format for multiple devices.

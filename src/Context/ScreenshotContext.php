@@ -1,26 +1,62 @@
 <?php
 
-namespace digitalistse\BehatTools\Context;
-
 use Behat\Behat\Context\Context;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\DrupalExtension\Context\RawDrupalContext;
 
 /**
- * Defines application features from the specific context.
+ * Screenshot context that saves desktop and mobile screenshots
+ * into separate folders for easy comparison.
  */
 class ScreenshotContext extends RawDrupalContext implements Context {
 
   const SCREENSHOT_EXTENSION = 'png';
 
-  private bool $doResizing = FALSE;
-
-  private array $displaySizes = [];
-
+  /**
+   * The current feature filename (without extension).
+   *
+   * @var string
+   */
   private string $currentFeature;
 
-  private string $screenshotPath;
+  /**
+   * Base path where screenshots are stored.
+   *
+   * @var string
+   */
+  private string $screenshotBasePath;
+
+  /**
+   * Subfolder name for desktop screenshots.
+   *
+   * @var string
+   */
+  private string $desktopSubfolder = 'desktop';
+
+  /**
+   * Subfolder name for mobile screenshots.
+   *
+   * @var string
+   */
+  private string $mobileSubfolder = 'mobile';
+
+  /**
+   * Desktop viewport size.
+   *
+   * @var array{width:int,height:int}
+   */
+  private array $desktopSize = [
+    'width' => 1920,
+    'height' => 1080,
+  ];
+
+  /**
+   * Mobile devices map: deviceName => [width:int, height:int].
+   *
+   * @var array<string, array{width:int,height:int}>
+   */
+  private array $mobileDevices = [];
 
   /**
    * @BeforeScenario
@@ -28,81 +64,124 @@ class ScreenshotContext extends RawDrupalContext implements Context {
   public function prepare(BeforeScenarioScope $scope) {
     $this->currentFeature = pathinfo($scope->getFeature()->getFile(), PATHINFO_FILENAME);
     $settings = $scope->getEnvironment()->getSuite()->getSettings();
-    $this->screenshotPath = $settings['screenshot_context']['screenshot_path'];
-    $this->doResizing = $settings['screenshot_context']['do_resizing'];
-    $this->displaySizes = $settings['screenshot_context']['display_sizes'];
+
+    // Required base path.
+    $this->screenshotBasePath = $settings['screenshot_context']['screenshot_path'];
+
+    // Optional configuration overrides.
+    if (!empty($settings['screenshot_context']['desktop_subfolder'])) {
+      $this->desktopSubfolder = $settings['screenshot_context']['desktop_subfolder'];
+    }
+    if (!empty($settings['screenshot_context']['mobile_subfolder'])) {
+      $this->mobileSubfolder = $settings['screenshot_context']['mobile_subfolder'];
+    }
+    if (!empty($settings['screenshot_context']['desktop_size'])) {
+      $this->desktopSize = $settings['screenshot_context']['desktop_size'];
+    }
+    if (!empty($settings['screenshot_context']['mobile_devices'])) {
+      $this->mobileDevices = $settings['screenshot_context']['mobile_devices'];
+    }
+
+    // Backwards-compat: if only display_sizes provided, try to infer.
+    if (empty($this->mobileDevices) && !empty($settings['screenshot_context']['display_sizes'])) {
+      $displaySizes = $settings['screenshot_context']['display_sizes'];
+      if (!empty($displaySizes['desktop'])) {
+        $this->desktopSize = $displaySizes['desktop'];
+      }
+      if (!empty($displaySizes['mobile'])) {
+        $this->mobileDevices = ['mobile' => $displaySizes['mobile']];
+      }
+    }
   }
 
   /**
    * @Then /^take a screenshot with name "([^"]*)"$/
    */
   public function takeAScreenshotWithName($name) {
-    \Drupal::service('file_system')->prepareDirectory($this->screenshotPath, FileSystemInterface::CREATE_DIRECTORY);
-    if ($this->doResizing) {
-      $this->takeScreenshotsWithDifferentSizes($name);
-    }
-    else {
-      $filename = $this->screenshotPath . '/' . $this->currentFeature . '-' . $name . '.' . self::SCREENSHOT_EXTENSION;
-      file_put_contents($filename, $this->getSession()
-        ->getDriver()
-        ->getScreenshot());
-    }
-  }
+    // Ensure folders exist.
+    $desktopDir = $this->screenshotBasePath . '/' . $this->desktopSubfolder;
+    $mobileDir = $this->screenshotBasePath . '/' . $this->mobileSubfolder;
 
-  private function takeScreenshotsWithDifferentSizes($name) {
-    foreach ($this->displaySizes as $size => $dimensions) {
-      $filename = $this->screenshotPath . '/' . $this->currentFeature . '-' . $name . '-' . $size . '.' . self::SCREENSHOT_EXTENSION;
-      $this->getSession()
-        ->getDriver()
-        ->resizeWindow($dimensions['width'], $dimensions['height'], 'current');
-      file_put_contents($filename, $this->getSession()
-        ->getDriver()
-        ->getScreenshot());
+    \Drupal::service('file_system')->prepareDirectory($desktopDir, FileSystemInterface::CREATE_DIRECTORY);
+    \Drupal::service('file_system')->prepareDirectory($mobileDir, FileSystemInterface::CREATE_DIRECTORY);
+
+    $session = $this->getSession();
+    $driver = $session->getDriver();
+
+    // Desktop screenshot.
+    $driver->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
+    $desktopFilename = $desktopDir . '/' . $this->currentFeature . '-' . $name . '.' . self::SCREENSHOT_EXTENSION;
+    file_put_contents($desktopFilename, $driver->getScreenshot());
+
+    // Mobile screenshots per device.
+    foreach ($this->mobileDevices as $deviceName => $dimensions) {
+      $driver->resizeWindow($dimensions['width'], $dimensions['height'], 'current');
+      $mobileFilename = $mobileDir . '/' . $this->currentFeature . '-' . $name . '-' . $deviceName . '.' . self::SCREENSHOT_EXTENSION;
+      file_put_contents($mobileFilename, $driver->getScreenshot());
     }
-    $this->getSession()->resizeWindow(1980, 1080, 'current');
+
+    // Restore desktop size.
+    $session->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
   }
 
   /**
    * @Then /^take a full-page screenshot with name "([^"]*)"$/
    */
   public function takeAFullPageScreenshotWithName($name) {
-    \Drupal::service('file_system')->prepareDirectory($this->screenshotPath, FileSystemInterface::CREATE_DIRECTORY);
+    // Ensure folders exist.
+    $desktopDir = $this->screenshotBasePath . '/' . $this->desktopSubfolder;
+    $mobileDir = $this->screenshotBasePath . '/' . $this->mobileSubfolder;
+
+    \Drupal::service('file_system')->prepareDirectory($desktopDir, FileSystemInterface::CREATE_DIRECTORY);
+    \Drupal::service('file_system')->prepareDirectory($mobileDir, FileSystemInterface::CREATE_DIRECTORY);
 
     $session = $this->getSession();
     $driver = $session->getDriver();
 
-    // Get the original scroll position
-    $originalScrollPosition = $session->evaluateScript('return window.pageYOffset || document.documentElement.scrollTop');
+    // Helper to capture full page for a given size and target directory.
+    $captureFullPage = function (int $width, int $height, string $targetDir, string $filenamePrefix) use ($session, $driver) {
+      $driver->resizeWindow($width, $height, 'current');
 
-    // Get page height and viewport height using JavaScript
-    $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
-    $viewportHeight = $session->evaluateScript('return window.innerHeight');
+      $originalScrollPosition = $session->evaluateScript('return window.pageYOffset || document.documentElement.scrollTop');
+      $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
+      $viewportHeight = $session->evaluateScript('return window.innerHeight');
 
-    $scrollPosition = 0;
-    $segment = 0; // For naming each screenshot segment
+      $scrollPosition = 0;
+      $segment = 0;
 
-    // Loop to capture screenshots in segments
-    while ($scrollPosition < $pageHeight) {
-      // Scroll to the current position
-      $session->executeScript("window.scrollTo(0, {$scrollPosition});");
+      while ($scrollPosition < $pageHeight) {
+        $session->executeScript("window.scrollTo(0, {$scrollPosition});");
+        usleep(500000); // allow lazy-loaded content
+        $filename = $targetDir . '/' . $filenamePrefix . '-segment-' . $segment . '.' . self::SCREENSHOT_EXTENSION;
+        file_put_contents($filename, $driver->getScreenshot());
+        $scrollPosition += $viewportHeight;
+        $segment++;
+      }
 
-      // Optional: Pause to allow lazy-loading elements to render
-      usleep(500000); // 500ms pause
+      $session->executeScript("window.scrollTo(0, {$originalScrollPosition});");
+    };
 
-      // Capture screenshot for the current segment
-      $filename = $this->screenshotPath . '/' . $this->currentFeature . '-' . $name . '-segment-' . $segment . '.' . self::SCREENSHOT_EXTENSION;
-      file_put_contents($filename, $driver->getScreenshot());
+    // Desktop full-page.
+    $captureFullPage(
+      $this->desktopSize['width'],
+      $this->desktopSize['height'],
+      $desktopDir,
+      $this->currentFeature . '-' . $name
+    );
 
-      // Move to the next section
-      $scrollPosition += $viewportHeight;
-      $segment++;
+    // Mobile full-page per device.
+    foreach ($this->mobileDevices as $deviceName => $dimensions) {
+      $captureFullPage(
+        $dimensions['width'],
+        $dimensions['height'],
+        $mobileDir,
+        $this->currentFeature . '-' . $name . '-' . $deviceName
+      );
     }
 
-    // Scroll back to the original position after taking the full-page screenshot
-    $session->executeScript("window.scrollTo(0, {$originalScrollPosition});");
-
-    // Restore window size after taking the full-page screenshot (if needed)
-    $this->getSession()->resizeWindow(1980, 1080, 'current');
+    // Restore desktop size.
+    $session->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
   }
-
 }
+
+
