@@ -127,21 +127,40 @@ class ScreenshotContext extends RawDrupalContext implements Context {
   }
 
   /**
-   * @Then /^take a full-page screenshot with name "([^"]*)"$/
+   * Take a full-page screenshot with optional device type filter.
+   *
+   * Allows you to specify which device types to capture, making it flexible
+   * and future-proof for any device configuration in behat.yml.
+   *
+   * Usage:
+   *   - take a full-page screenshot with name "my-screenshot"
+   *     (captures all: desktop + all mobile_devices)
+   *   - take a full-page screenshot with name "my-screenshot" for "desktop"
+   *     (only desktop)
+   *   - take a full-page screenshot with name "my-screenshot" for "mobile"
+   *     (only mobile devices, no desktop)
+   *   - take a full-page screenshot with name "my-screenshot" for "desktop,mobile"
+   *     (desktop + mobile)
+   *
+   * @Then /^take a full-page screenshot with name "([^"]*)"(?: for "([^"]*)")?$/
    */
-  public function takeAFullPageScreenshotWithName($name) {
-    // Ensure folders exist.
-    $desktopDir = $this->screenshotBasePath . '/' . $this->desktopSubfolder;
-    $mobileDir = $this->screenshotBasePath . '/' . $this->mobileSubfolder;
+  public function takeAFullPageScreenshotWithName($name, $deviceTypes = NULL) {
+    // Parse device types filter (if provided)
+    $captureDesktop = TRUE;
+    $captureMobile = TRUE;
 
-    \Drupal::service('file_system')->prepareDirectory($desktopDir, FileSystemInterface::CREATE_DIRECTORY);
-    \Drupal::service('file_system')->prepareDirectory($mobileDir, FileSystemInterface::CREATE_DIRECTORY);
+    if ($deviceTypes !== NULL) {
+      $types = array_map('trim', explode(',', strtolower($deviceTypes)));
+      $captureDesktop = in_array('desktop', $types);
+      $captureMobile = in_array('mobile', $types);
+    }
 
     $session = $this->getSession();
     $driver = $session->getDriver();
 
     // Helper to capture full page for a given size and target directory.
     $captureFullPage = function (int $width, int $height, string $targetDir, string $filenamePrefix) use ($session, $driver) {
+      \Drupal::service('file_system')->prepareDirectory($targetDir, FileSystemInterface::CREATE_DIRECTORY);
       $driver->resizeWindow($width, $height, 'current');
 
       $originalScrollPosition = $session->evaluateScript('return window.pageYOffset || document.documentElement.scrollTop');
@@ -163,26 +182,39 @@ class ScreenshotContext extends RawDrupalContext implements Context {
       $session->executeScript("window.scrollTo(0, {$originalScrollPosition});");
     };
 
-    // Desktop full-page.
-    $captureFullPage(
-      $this->desktopSize['width'],
-      $this->desktopSize['height'],
-      $desktopDir,
-      $this->currentFeature . '-' . $name
-    );
+    $captured = [];
 
-    // Mobile full-page per device.
-    foreach ($this->mobileDevices as $deviceName => $dimensions) {
+    // Desktop full-page screenshot
+    if ($captureDesktop) {
+      $desktopDir = $this->screenshotBasePath . '/' . $this->desktopSubfolder;
       $captureFullPage(
-        $dimensions['width'],
-        $dimensions['height'],
-        $mobileDir,
-        $this->currentFeature . '-' . $name . '-' . $deviceName
+        $this->desktopSize['width'],
+        $this->desktopSize['height'],
+        $desktopDir,
+        $this->currentFeature . '-' . $name
       );
+      $captured[] = 'desktop';
+    }
+
+    // Mobile screenshots
+    if ($captureMobile && !empty($this->mobileDevices)) {
+      $mobileDir = $this->screenshotBasePath . '/' . $this->mobileSubfolder;
+      foreach ($this->mobileDevices as $deviceName => $dimensions) {
+        $captureFullPage(
+          $dimensions['width'],
+          $dimensions['height'],
+          $mobileDir,
+          $this->currentFeature . '-' . $name . '-' . $deviceName
+        );
+      }
+      $captured[] = 'mobile';
     }
 
     // Restore desktop size.
     $session->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
+
+    $capturedTypes = !empty($captured) ? implode(', ', $captured) : 'none';
+    echo "Screenshot saved: {$name} (captured: {$capturedTypes})\n";
   }
 }
 
