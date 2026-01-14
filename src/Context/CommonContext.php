@@ -33,7 +33,7 @@ class CommonContext extends RawDrupalContext {
    */
   public function iClickTheText($arg1) {
     $page = $this->getSession()->getPage();
-    $element = $page->find('xpath', "//*[text()='$arg1']");
+    $element = $page->find('xpath', "//*[normalize-space(text())='$arg1']");
     if (empty($element)) {
       throw new Exception("No html element found for the text ('$arg1')");
     }
