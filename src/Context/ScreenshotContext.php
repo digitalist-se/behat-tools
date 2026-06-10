@@ -172,9 +172,33 @@ class ScreenshotContext extends RawDrupalContext implements Context {
 
       while ($scrollPosition < $pageHeight) {
         $session->executeScript("window.scrollTo(0, {$scrollPosition});");
-        usleep(500000); // allow lazy-loaded content
+
+        // Wait until every image in the current viewport has finished loading.
+        $session->wait(10000,
+          "(function () {" .
+          "  var vw = window.innerWidth || document.documentElement.clientWidth || 0;" .
+          "  var vh = window.innerHeight || document.documentElement.clientHeight || 0;" .
+          "  var imgs = Array.prototype.slice.call(document.images || []);" .
+          "  for (var i = 0; i < imgs.length; i++) {" .
+          "    var img = imgs[i];" .
+          "    if (!img) { continue; }" .
+          "    var rect = img.getBoundingClientRect();" .
+          "    var inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;" .
+          "    if (!inViewport) { continue; }" .
+          "    if (!img.complete || typeof img.naturalWidth === 'undefined' || img.naturalWidth === 0) {" .
+          "      return false;" .
+          "    }" .
+          "  }" .
+          "  return (typeof document.fonts !== 'undefined' && document.fonts) ? document.fonts.status === 'loaded' : true;" .
+          "}())"
+        );
+
         $filename = $targetDir . '/' . $filenamePrefix . '-segment-' . $segment . '.' . self::SCREENSHOT_EXTENSION;
         file_put_contents($filename, $driver->getScreenshot());
+
+        // Re-read height: lazy images can grow the page as they load, which
+        // would otherwise change the segment count between runs.
+        $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
         $scrollPosition += $viewportHeight;
         $segment++;
       }
