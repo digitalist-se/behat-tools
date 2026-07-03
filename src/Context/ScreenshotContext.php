@@ -16,6 +16,47 @@ class ScreenshotContext extends RawDrupalContext implements Context {
   const SCREENSHOT_EXTENSION = 'png';
 
   /**
+   * JS condition polled until the page has visually settled.
+   *
+   * Waiting only for <img> elements and fonts is not enough: CSS
+   * background images, late-rendering form sections (vertical tabs,
+   * editors) and Leaflet map controls all paint after that, which makes
+   * screenshot comparisons flaky. This condition requires: document
+   * ready, two animation frames painted since the wait was armed, fonts
+   * loaded, in-viewport images complete, visible Leaflet maps showing
+   * their attribution (an empty attribution bar is a map still
+   * initializing), and the page height identical on two consecutive
+   * polls (late-rendering sections change it).
+   */
+  private const STABLE_RENDER_CONDITION = <<<'JS'
+(function () {
+  if (document.readyState !== 'complete' || !window.__behatFramesPainted) { return false; }
+  if (typeof document.fonts !== 'undefined' && document.fonts && document.fonts.status !== 'loaded') { return false; }
+  var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  var imgs = Array.prototype.slice.call(document.images || []);
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i];
+    if (!img) { continue; }
+    var rect = img.getBoundingClientRect();
+    var inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;
+    if (!inViewport) { continue; }
+    if (!img.complete || typeof img.naturalWidth === 'undefined' || img.naturalWidth === 0) { return false; }
+  }
+  var maps = document.querySelectorAll('.leaflet-container');
+  for (var j = 0; j < maps.length; j++) {
+    if (!maps[j].offsetParent) { continue; }
+    var attribution = maps[j].querySelector('.leaflet-control-attribution');
+    if (!attribution || attribution.textContent.trim() === '') { return false; }
+  }
+  var height = document.body.scrollHeight;
+  var stable = window.__behatStableHeight === height;
+  window.__behatStableHeight = height;
+  return stable;
+}())
+JS;
+
+  /**
    * The current feature filename (without extension).
    *
    * @var string
@@ -112,12 +153,14 @@ class ScreenshotContext extends RawDrupalContext implements Context {
 
     // Desktop screenshot.
     $driver->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
+    $this->waitForStableRender();
     $desktopFilename = $desktopDir . '/' . $this->currentFeature . '-' . $name . '.' . self::SCREENSHOT_EXTENSION;
     file_put_contents($desktopFilename, $driver->getScreenshot());
 
     // Mobile screenshots per device.
     foreach ($this->mobileDevices as $deviceName => $dimensions) {
       $driver->resizeWindow($dimensions['width'], $dimensions['height'], 'current');
+      $this->waitForStableRender();
       $mobileFilename = $mobileDir . '/' . $this->currentFeature . '-' . $name . '-' . $deviceName . '.' . self::SCREENSHOT_EXTENSION;
       file_put_contents($mobileFilename, $driver->getScreenshot());
     }
@@ -163,35 +206,32 @@ class ScreenshotContext extends RawDrupalContext implements Context {
       \Drupal::service('file_system')->prepareDirectory($targetDir, FileSystemInterface::CREATE_DIRECTORY);
       $driver->resizeWindow($width, $height, 'current');
 
+      $this->waitForStableRender();
+
       $originalScrollPosition = $session->evaluateScript('return window.pageYOffset || document.documentElement.scrollTop');
-      $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
       $viewportHeight = $session->evaluateScript('return window.innerHeight');
 
+      // Pre-scroll through the whole page so lazy content (images, CSS
+      // backgrounds, JS-rendered sections) is triggered before any segment
+      // is captured; otherwise it can pop in mid-capture and shift the
+      // content of later segments.
+      $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
+      for ($position = 0; $position < $pageHeight; $position += $viewportHeight) {
+        $session->executeScript("window.scrollTo(0, {$position});");
+        // Give the browser time to paint and fire lazy loaders.
+        usleep(150000);
+        $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
+      }
+      $session->executeScript('window.scrollTo(0, 0);');
+      $this->waitForStableRender();
+
+      $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
       $scrollPosition = 0;
       $segment = 0;
 
       while ($scrollPosition < $pageHeight) {
         $session->executeScript("window.scrollTo(0, {$scrollPosition});");
-
-        // Wait until every image in the current viewport has finished loading.
-        $session->wait(10000,
-          "(function () {" .
-          "  var vw = window.innerWidth || document.documentElement.clientWidth || 0;" .
-          "  var vh = window.innerHeight || document.documentElement.clientHeight || 0;" .
-          "  var imgs = Array.prototype.slice.call(document.images || []);" .
-          "  for (var i = 0; i < imgs.length; i++) {" .
-          "    var img = imgs[i];" .
-          "    if (!img) { continue; }" .
-          "    var rect = img.getBoundingClientRect();" .
-          "    var inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;" .
-          "    if (!inViewport) { continue; }" .
-          "    if (!img.complete || typeof img.naturalWidth === 'undefined' || img.naturalWidth === 0) {" .
-          "      return false;" .
-          "    }" .
-          "  }" .
-          "  return (typeof document.fonts !== 'undefined' && document.fonts) ? document.fonts.status === 'loaded' : true;" .
-          "}())"
-        );
+        $this->waitForStableRender();
 
         $filename = $targetDir . '/' . $filenamePrefix . '-segment-' . $segment . '.' . self::SCREENSHOT_EXTENSION;
         file_put_contents($filename, $driver->getScreenshot());
@@ -239,6 +279,25 @@ class ScreenshotContext extends RawDrupalContext implements Context {
 
     $capturedTypes = !empty($captured) ? implode(', ', $captured) : 'none';
     echo "Screenshot saved: {$name} (captured: {$capturedTypes})\n";
+  }
+
+  /**
+   * Waits until the page has visually settled (see the condition const).
+   *
+   * Falls through after the timeout so a page that never settles (e.g. an
+   * animation) still gets captured.
+   */
+  private function waitForStableRender(int $timeout = 10000): void {
+    $session = $this->getSession();
+    // Seed the height tracker and require two painted frames, so the
+    // condition cannot pass before the browser has painted the result of
+    // the scroll/resize that triggered this wait.
+    $session->executeScript(
+      "window.__behatStableHeight = document.body.scrollHeight;" .
+      "window.__behatFramesPainted = false;" .
+      "requestAnimationFrame(function () { requestAnimationFrame(function () { window.__behatFramesPainted = true; }); });"
+    );
+    $session->wait($timeout, self::STABLE_RENDER_CONDITION);
   }
 }
 
