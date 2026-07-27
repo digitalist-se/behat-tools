@@ -27,6 +27,17 @@ class ScreenshotContext extends RawDrupalContext implements Context {
    * their attribution (an empty attribution bar is a map still
    * initializing), and the page height identical on two consecutive
    * polls (late-rendering sections change it).
+   *
+   * For <picture> elements the media attributes are directive: the
+   * browser must switch images whenever a different <source> starts to
+   * match, and screenshots resize the window, which re-runs that
+   * selection. img.complete is not a reliable guard here — it still
+   * reports true for the previously committed image while the swap to
+   * the newly matching source is pending, so a capture can race the
+   * swap and freeze a stale derivative (a real flake: hero images with
+   * per-breakpoint crops captured mid-swap after a resize). So for
+   * every in-viewport <picture> img, also require currentSrc to BE the
+   * candidate of the first <source> whose media currently matches.
    */
   private const STABLE_RENDER_CONDITION = <<<'JS'
 (function () {
@@ -42,6 +53,25 @@ class ScreenshotContext extends RawDrupalContext implements Context {
     var inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;
     if (!inViewport) { continue; }
     if (!img.complete || typeof img.naturalWidth === 'undefined' || img.naturalWidth === 0) { return false; }
+    var picture = img.parentElement && img.parentElement.tagName === 'PICTURE' ? img.parentElement : null;
+    if (picture && img.currentSrc) {
+      var sources = picture.querySelectorAll('source');
+      var expected = null;
+      for (var k = 0; k < sources.length; k++) {
+        var media = sources[k].getAttribute('media');
+        if (media && !window.matchMedia(media).matches) { continue; }
+        expected = sources[k];
+        break;
+      }
+      // First candidate URL of the matching <source> (or the img src
+      // fallback when none matches) must be what is committed now.
+      var candidate = expected ? (expected.getAttribute('srcset') || '') : (img.getAttribute('src') || '');
+      candidate = candidate.split(',')[0].trim().split(/\s+/)[0];
+      if (candidate) {
+        var resolved = new URL(candidate, window.location.href).href;
+        if (img.currentSrc !== resolved) { return false; }
+      }
+    }
   }
   var maps = document.querySelectorAll('.leaflet-container');
   for (var j = 0; j < maps.length; j++) {
