@@ -121,3 +121,53 @@ default:
             height: 667
 ```
 When using `display_sizes`, the desktop size is read from `display_sizes.desktop`, and a single mobile device named `mobile` is inferred from `display_sizes.mobile`. Other keys (e.g. `tablet`) are ignored by the current implementation. Prefer the recommended `desktop_size` + `mobile_devices` format for multiple devices.
+
+## CKEditor5Context
+
+Drives CKEditor 5 on Drupal text fields in a real browser (`@javascript`
+scenarios). Add it to `behat.yml`:
+
+```
+        - digitalistse\BehatTools\Context\CKEditor5Context
+```
+
+Fields are addressed by the locator in Drupal's form item wrapper, so `body`
+means `div.js-form-item-body-0-value`; a paragraph field looks like
+`field-sections-0-subform-field-text`. Toolbar buttons are addressed by their
+English label and matched against the editor's own translation, so `Bold`
+finds `Fet` on a Swedish UI.
+
+| Step | What it does |
+| --- | --- |
+| `I fill in wysiwyg on field "body" with "<p>Text</p>"` | Sets the editor content with `setData()`, bypassing the UI. |
+| `the wysiwyg on field "body" should use the "basic_html" format` | Asserts the active text format. |
+| `the wysiwyg toolbar on field "body" should have the items "heading, bold, link"` | Compares the configured toolbar items (without separators) with the registered CKEditor components and the rendered buttons. CKEditor only console-warns when a plugin fails to load, so this is the check that catches a silently missing button. |
+| `I select all text in the wysiwyg on field "body"` | Selects the whole document in the editor model. |
+| `I press the "Bold" button in the wysiwyg toolbar on field "body"` | Real click on a toolbar button found by its English label. |
+| `the wysiwyg on field "body" should contain '<strong>Text</strong>'` | Substring check on `editor.getData()`, retried for five seconds. Single quotes, so HTML attributes can be asserted. |
+| `I submit the wysiwyg link form with "https://example.com/"` | After pressing `Link`: types the URL into the URL input (not the "displayed text" input) and submits with Enter. |
+| `I insert the image "/core/misc/druplicon.png" through the wysiwyg toolbar on field "body"` | Presses `Insert image` and submits the by-URL form. Covers formats with image upload disabled; with upload enabled the button is a dropdown and the step needs extending. |
+| `the wysiwyg source editing area on field "body" should contain '<strong>'` | After pressing `Source`: checks the source textarea. |
+
+Balloon forms are submitted with Enter or a scripted click on purpose. A
+WebDriver click inside a balloon scrolls the page to the top, the balloon
+target leaves the viewport and CKEditor parks the balloon off screen. Typing
+into balloon inputs uses raw WebDriver keystrokes because Mink's `setValue()`
+blurs the field afterwards, which closes the balloon.
+
+Example, on a site where editors use `restricted_html`:
+
+```
+  @api @javascript
+  Scenario: Toolbar buttons format text and the formatting survives saving
+    Given I am logged in as a user with the "editor" role
+    And I am on "/node/add/page"
+    Then the wysiwyg toolbar on field "body" should have the items "heading, bold, italic, link, sourceEditing"
+    When I fill in wysiwyg on field "body" with "<p>Toolbar test text</p>"
+    And I select all text in the wysiwyg on field "body"
+    And I press the "Bold" button in the wysiwyg toolbar on field "body"
+    Then the wysiwyg on field "body" should contain '<strong>Toolbar test text</strong>'
+    When I press the "Link" button in the wysiwyg toolbar on field "body"
+    And I submit the wysiwyg link form with "https://example.com/"
+    Then the wysiwyg on field "body" should contain '<a href="https://example.com/">'
+```
