@@ -23,18 +23,6 @@ use Behat\MinkExtension\Context\RawMinkContext;
 class CKEditor5Context extends RawMinkContext {
 
   /**
-   * Sets the editor content from a string, bypassing the UI.
-   *
-   * @When I fill in wysiwyg on field :locator with :value
-   */
-  public function iFillInWysiwygOnFieldWith($locator, $value) {
-    $this->getSession()->executeScript("(function () {
-      var editor = " . $this->editorInstanceJs($locator) . ";
-      editor.setData(" . json_encode($value) . ");
-    })();");
-  }
-
-  /**
    * @Then the wysiwyg on field :locator should use the :format format
    */
   public function theWysiwygOnFieldShouldUseTheFormat($locator, $format) {

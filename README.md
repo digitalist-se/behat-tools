@@ -139,7 +139,7 @@ finds `Fet` on a Swedish UI.
 
 | Step | What it does |
 | --- | --- |
-| `I fill in wysiwyg on field "body" with "<p>Text</p>"` | Sets the editor content with `setData()`, bypassing the UI. |
+| `I fill in wysiwyg on field "body" with "<p>Text</p>"` | Sets the editor content with `setData()`, bypassing the UI. Defined in CommonContext, so it is available without this context. |
 | `the wysiwyg on field "body" should use the "basic_html" format` | Asserts the active text format. |
 | `the wysiwyg toolbar on field "body" should have the items "heading, bold, link"` | Compares the configured toolbar items (without separators) with the registered CKEditor components and the rendered buttons. CKEditor only console-warns when a plugin fails to load, so this is the check that catches a silently missing button. |
 | `I select all text in the wysiwyg on field "body"` | Selects the whole document in the editor model. |

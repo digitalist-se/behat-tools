@@ -272,25 +272,19 @@ JS;
   }
 
   /**
-   * @Then I fill in wysiwyg on field :locator with :value
+   * Sets the CKEditor 5 content from a string, bypassing the UI.
+   *
+   * @When I fill in wysiwyg on field :locator with :value
    */
   public function iFillInWysiwygOnFieldWith($locator, $value) {
-    $editor = "div.js-form-item-$locator-0-value .ck-editor__editable";
-    $this->getSession()
-      ->executeScript(
-        "
-        var domEditableElement = document.querySelector(\"$editor\");
-        if (domEditableElement.ckeditorInstance) {
-          const editorInstance = domEditableElement.ckeditorInstance;
-          if (editorInstance) {
-            editorInstance.setData(\"$value\");
-          } else {
-            throw new Exception('Could not get the editor instance!');
-          }
-        } else {
-          throw new Exception('Could not find the element!');
-        }
-        ");
+    $selector = "div.js-form-item-$locator-0-value .ck-editor__editable";
+    $this->getSession()->executeScript("(function () {
+      var el = document.querySelector(" . json_encode($selector) . ");
+      if (!el || !el.ckeditorInstance) {
+        throw new Error('No CKEditor 5 instance found on field $locator');
+      }
+      el.ckeditorInstance.setData(" . json_encode($value) . ");
+    })();");
   }
 
   /**
