@@ -55,7 +55,8 @@ class CKEditor5Context extends RawMinkContext {
         return v.element && !v.element.classList.contains('ck-toolbar__separator') && !v.element.classList.contains('ck-toolbar__line-break');
       });
       var labels = rendered.map(function (v) {
-        return (v.buttonView && v.buttonView.label) || v.label || v.element.getAttribute('data-cke-tooltip-text') || v.element.className;
+        var el = (v.buttonView && v.buttonView.element) || v.element;
+        return (v.buttonView && v.buttonView.label) || v.label || el.getAttribute('data-cke-tooltip-text') || el.className;
       });
       return {configured: configured, missing: missing, renderedCount: rendered.length, labels: labels};
     ");
@@ -88,8 +89,8 @@ class CKEditor5Context extends RawMinkContext {
    * Clicks a toolbar button by its English label.
    *
    * The label is translated with the editor's t() and Drupal.t(), so "Bold"
-   * finds "Fet" on a Swedish UI. Dropdown buttons (heading, style) match on
-   * their button label too.
+   * finds "Fet" on a Swedish UI. Dropdowns (heading, style) show the current
+   * value as their label, so they are matched on their button's tooltip.
    *
    * @When I press the :label button in the wysiwyg toolbar on field :locator
    */
@@ -101,7 +102,8 @@ class CKEditor5Context extends RawMinkContext {
       var views = Array.from(editor.ui.view.toolbar.items);
       var match = views.find(function (v) {
         var l = (v.buttonView && v.buttonView.label) || v.label;
-        var tip = v.element && v.element.getAttribute('data-cke-tooltip-text');
+        var el = (v.buttonView && v.buttonView.element) || v.element;
+        var tip = el && el.getAttribute('data-cke-tooltip-text');
         return (l && candidates.indexOf(l) !== -1) || (tip && candidates.some(function (c) { return tip.indexOf(c) === 0; }));
       });
       if (!match) {
@@ -196,6 +198,151 @@ class CKEditor5Context extends RawMinkContext {
   }
 
   /**
+   * Waits for the editor instance, which attaches after the field's AJAX load.
+   *
+   * @Then the wysiwyg on field :locator should be ready
+   */
+  public function theWysiwygOnFieldShouldBeReady($locator) {
+    $selector = "div.js-form-item-$locator-0-value .ck-editor__editable";
+    $ready = $this->getSession()->wait(10000, "(function () { var el = document.querySelector(" . json_encode($selector) . "); return !!(el && el.ckeditorInstance && el.ckeditorInstance.state === 'ready'); })()");
+    if (!$ready) {
+      throw new ExpectationException(sprintf('No CKEditor 5 instance appeared on field "%s" within 10 seconds.', $locator), $this->getSession()->getDriver());
+    }
+  }
+
+  /**
+   * Picks an entry of the heading dropdown, e.g. "Heading 2" or "Paragraph".
+   *
+   * @When I choose :heading from the heading dropdown in the wysiwyg toolbar on field :locator
+   */
+  public function iChooseFromTheHeadingDropdownInTheWysiwygToolbarOnField($heading, $locator) {
+    $this->iPressTheButtonInTheWysiwygToolbarOnField('Heading', $locator);
+    $page = $this->getSession()->getPage();
+    $classHint = 'ck-heading_' . strtolower(str_replace(' ', '', $heading));
+    $item = $page->waitFor(5, function ($page) use ($heading, $classHint) {
+      foreach ($page->findAll('css', '.ck-dropdown__panel-visible .ck-list__item .ck-button') as $button) {
+        if ($button->isVisible() && (trim($button->getText()) === $heading || $button->hasClass($classHint))) {
+          return $button;
+        }
+      }
+      return NULL;
+    });
+    if (!$item) {
+      $labels = array_map(function (NodeElement $b) { return trim($b->getText()); }, $page->findAll('css', '.ck-dropdown__panel-visible .ck-list__item .ck-button'));
+      throw new ExpectationException(sprintf('No "%s" entry in the heading dropdown of field "%s". Entries: %s', $heading, $locator, implode(' | ', $labels)), $this->getSession()->getDriver());
+    }
+    $item->click();
+  }
+
+  /**
+   * Appends an empty paragraph after the last block and puts the cursor
+   * there, so an insert lands after the content instead of inside it.
+   *
+   * @When I move the cursor to the end of the wysiwyg on field :locator
+   */
+  public function iMoveTheCursorToTheEndOfTheWysiwygOnField($locator) {
+    $this->getSession()->executeScript("(function () {
+      var editor = " . $this->editorInstanceJs($locator) . ";
+      editor.editing.view.focus();
+      editor.model.change(function (writer) {
+        var paragraph = writer.createElement('paragraph');
+        writer.append(paragraph, editor.model.document.getRoot());
+        writer.setSelection(paragraph, 'in');
+      });
+    })();");
+  }
+
+  /**
+   * Closes balloons, collapses the selection and blurs the editor, so a
+   * screenshot shows no transient UI.
+   *
+   * @When I blur the wysiwyg on field :locator
+   */
+  public function iBlurTheWysiwygOnField($locator) {
+    $this->getSession()->executeScript("(function () {
+      var editor = " . $this->editorInstanceJs($locator) . ";
+      var balloon = editor.plugins.get('ContextualBalloon');
+      while (balloon.visibleView) {
+        balloon.remove(balloon.visibleView);
+      }
+      editor.model.change(function (writer) {
+        writer.setSelection(writer.createPositionAt(editor.model.document.getRoot(), 'end'));
+      });
+      var editable = editor.ui.getEditableElement();
+      if (editable && document.activeElement === editable) {
+        editable.blur();
+      }
+    })();");
+  }
+
+  /**
+   * Changes the text format select of a field and waits for the new editor.
+   *
+   * Drupal asks for confirmation when the field has content, and tags the
+   * textarea with the new format before the old editor is destroyed, so the
+   * wait looks for an instance other than the one flagged beforehand.
+   *
+   * @When I switch the text format of field :locator to :format
+   */
+  public function iSwitchTheTextFormatOfFieldTo($locator, $format) {
+    $page = $this->getSession()->getPage();
+    $select = $page->find('css', "div.js-form-item-$locator-0-format select");
+    if (!$select) {
+      throw new ExpectationException(sprintf('No text format select for field "%s".', $locator), $this->getSession()->getDriver());
+    }
+    $editable = json_encode("div.js-form-item-$locator-0-value .ck-editor__editable");
+    $textarea = json_encode("div.js-form-item-$locator-0-value textarea");
+    $this->getSession()->executeScript("(function () { var el = document.querySelector($editable); if (el && el.ckeditorInstance) { el.ckeditorInstance.behatPrevious = true; } })();");
+    $select->selectOption($format);
+
+    $switched = "(function () {
+      var t = document.querySelector($textarea);
+      var el = document.querySelector($editable);
+      return !!(t && t.getAttribute('data-editor-active-text-format') === " . json_encode($format) . " && el && el.ckeditorInstance && !el.ckeditorInstance.behatPrevious);
+    })()";
+    $deadline = microtime(TRUE) + 10;
+    while (microtime(TRUE) < $deadline) {
+      if ($this->getSession()->evaluateScript("return $switched;")) {
+        return;
+      }
+      $continue = $page->find('css', '.editor-change-text-format-modal .ui-dialog-buttonpane button.button--primary');
+      if ($continue && $continue->isVisible()) {
+        $continue->click();
+      }
+      usleep(200000);
+    }
+    $active = $this->getSession()->evaluateScript("return (function () { var t = document.querySelector($textarea); return t ? t.getAttribute('data-editor-active-text-format') : null; })();");
+    throw new ExpectationException(sprintf('The editor of field "%s" did not re-attach with the "%s" format within 10 seconds (active format: %s).', $locator, $format, var_export($active, TRUE)), $this->getSession()->getDriver());
+  }
+
+  /**
+   * Uploads an image through the toolbar, for formats with image upload
+   * enabled: Drupal's image button is then a file dialog with a hidden
+   * input. The path is relative to the Mink files_path.
+   *
+   * @When I upload the image :file through the wysiwyg toolbar on field :locator
+   */
+  public function iUploadTheImageThroughTheWysiwygToolbarOnField($file, $locator) {
+    $path = rtrim((string) $this->getMinkParameter('files_path'), '/') . '/' . $file;
+    if (!is_file($path)) {
+      throw new ExpectationException("The image file $path does not exist.", $this->getSession()->getDriver());
+    }
+    $input = $this->getSession()->getPage()->find('css', "div.js-form-item-$locator-0-value .ck-toolbar input[type=\"file\"]");
+    if (!$input) {
+      throw new ExpectationException(sprintf('No file input in the toolbar of field "%s". Does the text format allow image upload?', $locator), $this->getSession()->getDriver());
+    }
+    $before = (int) $this->getSession()->evaluateScript('return ' . $this->uploadedImageCountJs($locator) . ';');
+    $input->attachFile($path);
+
+    // Done when one more image has a real src and the placeholder is gone.
+    $uploaded = $this->getSession()->wait(20000, '(' . $this->uploadedImageCountJs($locator) . ' > ' . $before . ') && !document.querySelector(' . json_encode("div.js-form-item-$locator-0-value .ck-upload-placeholder-loader") . ')');
+    if (!$uploaded) {
+      $data = (string) $this->getSession()->evaluateScript("return " . $this->editorInstanceJs($locator) . ".getData();");
+      throw new ExpectationException(sprintf('The image upload on field "%s" did not finish within 20 seconds. Data: %s', $locator, $data), $this->getSession()->getDriver());
+    }
+  }
+
+  /**
    * Checks the source editing textarea, after pressing the "Source" button.
    *
    * @Then /^the wysiwyg source editing area on field "([^"]*)" should contain '([^']*)'$/
@@ -213,6 +360,13 @@ class CKEditor5Context extends RawMinkContext {
     if (strpos($value, $text) === FALSE) {
       throw new ExpectationException(sprintf('The source editing area of field "%s" does not contain %s. Source: %s', $locator, $text, $value), $this->getSession()->getDriver());
     }
+  }
+
+  /**
+   * JavaScript expression counting images whose src is not a data URI.
+   */
+  protected function uploadedImageCountJs($locator) {
+    return '(' . $this->editorInstanceJs($locator) . '.getData().match(/<img\b[^>]*\bsrc="(?!data:)/g) || []).length';
   }
 
   /**
