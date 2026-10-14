@@ -143,10 +143,16 @@ finds `Fet` on a Swedish UI.
 | `the wysiwyg on field "body" should use the "basic_html" format` | Asserts the active text format. |
 | `the wysiwyg toolbar on field "body" should have the items "heading, bold, link"` | Compares the configured toolbar items (without separators) with the registered CKEditor components and the rendered buttons. CKEditor only console-warns when a plugin fails to load, so this is the check that catches a silently missing button. |
 | `I select all text in the wysiwyg on field "body"` | Selects the whole document in the editor model. |
-| `I press the "Bold" button in the wysiwyg toolbar on field "body"` | Real click on a toolbar button found by its English label. |
+| `the wysiwyg on field "body" should be ready` | Waits up to ten seconds for the editor instance, which attaches after the field's AJAX load. |
+| `I press the "Bold" button in the wysiwyg toolbar on field "body"` | Real click on a toolbar button found by its English label. Dropdowns such as `Heading` are found by their tooltip, since their label shows the current value. |
+| `I choose "Heading 2" from the heading dropdown in the wysiwyg toolbar on field "body"` | Opens the heading dropdown and clicks the entry, matched by its text or its `ck-heading_heading2` class. |
+| `I switch the text format of field "body" to "full_html"` | Changes the text format select, confirms Drupal's dialog when the field has content, and waits for the new editor. |
+| `I move the cursor to the end of the wysiwyg on field "body"` | Appends an empty paragraph after the last block and puts the cursor there, so an insert lands after the content. |
+| `I blur the wysiwyg on field "body"` | Closes balloons, collapses the selection and blurs the editor, so a screenshot shows no transient UI. |
 | `the wysiwyg on field "body" should contain '<strong>Text</strong>'` | Substring check on `editor.getData()`, retried for five seconds. Single quotes, so HTML attributes can be asserted. |
 | `I submit the wysiwyg link form with "https://example.com/"` | After pressing `Link`: types the URL into the URL input (not the "displayed text" input) and submits with Enter. |
-| `I insert the image "/core/misc/druplicon.png" through the wysiwyg toolbar on field "body"` | Presses `Insert image` and submits the by-URL form. Covers formats with image upload disabled; with upload enabled the button is a dropdown and the step needs extending. |
+| `I insert the image "/core/misc/druplicon.png" through the wysiwyg toolbar on field "body"` | Presses `Insert image` and submits the by-URL form, for formats with image upload disabled. |
+| `I upload the image "images/photo.jpg" through the wysiwyg toolbar on field "body"` | For formats with image upload enabled: puts the file, relative to the Mink `files_path`, into the toolbar's file input and waits for Drupal to store it. |
 | `the wysiwyg source editing area on field "body" should contain '<strong>'` | After pressing `Source`: checks the source textarea. |
 
 Balloon forms are submitted with Enter or a scripted click on purpose. A
