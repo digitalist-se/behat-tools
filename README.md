@@ -98,12 +98,16 @@ default:
             height: 1024
         desktop_subfolder: 'desktop'                        # optional (default: desktop)
         mobile_subfolder: 'mobile'                          # optional (default: mobile)
+        horizontal_overflow: fail                           # optional: fail (default) | warn | off
 ```
 
 Notes:
 - One desktop screenshot is always taken using `desktop_size` (defaults to 1920x1080 if not set).
 - One additional screenshot is taken per entry in `mobile_devices`, saved under the `mobile_subfolder` using the device name in the filename.
 - If no `mobile_devices` are configured, only the desktop screenshot is produced.
+- Mobile devices are rendered with Chrome's device emulation (`Emulation.setDeviceMetricsOverride` via chromedriver), not by resizing the window. A headed Chrome refuses windows narrower than about 500px, so resizing silently produced 500px "mobile" captures. Drivers other than chromedriver fall back to resizing. Projects upgrading from a resize-based version get mobile captures at the configured width and need to re-baseline them once.
+- Every captured size is checked for horizontal overflow: when the page is wider than the viewport the step fails after the screenshots were written, naming the outermost elements that stick out (elements inside an `overflow-x: auto|scroll|hidden` ancestor are ignored). Configure with `horizontal_overflow: fail` (default), `warn` (print only) or `off`.
+- `Then the page should not overflow horizontally` runs the same check at the current window size without taking a screenshot.
 
 Legacy configuration (backwards compatibility):
 ```yml

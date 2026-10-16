@@ -132,6 +132,31 @@ JS;
   private array $mobileDevices = [];
 
   /**
+   * What to do when a captured page is wider than its viewport.
+   *
+   * 'fail' throws after the capture (the screenshots are still written so
+   * the artifact shows the broken layout), 'warn' only prints, 'off' skips
+   * the check. Configured via screenshot_context.horizontal_overflow.
+   *
+   * @var string
+   */
+  private string $horizontalOverflow = 'fail';
+
+  /**
+   * TRUE while a Chrome device-metrics override is active.
+   *
+   * @var bool
+   */
+  private bool $emulationActive = FALSE;
+
+  /**
+   * Overflow findings collected during the current screenshot step.
+   *
+   * @var string[]
+   */
+  private array $overflowFindings = [];
+
+  /**
    * @BeforeScenario
    */
   public function prepare(BeforeScenarioScope $scope) {
@@ -153,6 +178,13 @@ JS;
     }
     if (!empty($settings['screenshot_context']['mobile_devices'])) {
       $this->mobileDevices = $settings['screenshot_context']['mobile_devices'];
+    }
+    if (!empty($settings['screenshot_context']['horizontal_overflow'])) {
+      $mode = strtolower((string) $settings['screenshot_context']['horizontal_overflow']);
+      if (!in_array($mode, ['fail', 'warn', 'off'], TRUE)) {
+        throw new \InvalidArgumentException("screenshot_context.horizontal_overflow must be 'fail', 'warn' or 'off', got '{$mode}'.");
+      }
+      $this->horizontalOverflow = $mode;
     }
 
     // Backwards-compat: if only display_sizes provided, try to infer.
@@ -178,25 +210,28 @@ JS;
     \Drupal::service('file_system')->prepareDirectory($desktopDir, FileSystemInterface::CREATE_DIRECTORY);
     \Drupal::service('file_system')->prepareDirectory($mobileDir, FileSystemInterface::CREATE_DIRECTORY);
 
-    $session = $this->getSession();
-    $driver = $session->getDriver();
+    $driver = $this->getSession()->getDriver();
+    $this->overflowFindings = [];
 
     // Desktop screenshot.
-    $driver->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
+    $this->setViewport($this->desktopSize['width'], $this->desktopSize['height'], FALSE);
     $this->waitForStableRender();
+    $this->recordOverflow('desktop', $this->desktopSize['width']);
     $desktopFilename = $desktopDir . '/' . $this->currentFeature . '-' . $name . '.' . self::SCREENSHOT_EXTENSION;
     file_put_contents($desktopFilename, $driver->getScreenshot());
 
     // Mobile screenshots per device.
     foreach ($this->mobileDevices as $deviceName => $dimensions) {
-      $driver->resizeWindow($dimensions['width'], $dimensions['height'], 'current');
+      $this->setViewport($dimensions['width'], $dimensions['height'], TRUE);
       $this->waitForStableRender();
+      $this->recordOverflow($deviceName, $dimensions['width']);
       $mobileFilename = $mobileDir . '/' . $this->currentFeature . '-' . $name . '-' . $deviceName . '.' . self::SCREENSHOT_EXTENSION;
       file_put_contents($mobileFilename, $driver->getScreenshot());
     }
 
     // Restore desktop size.
-    $session->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
+    $this->setViewport($this->desktopSize['width'], $this->desktopSize['height'], FALSE);
+    $this->reportOverflow();
   }
 
   /**
@@ -230,11 +265,12 @@ JS;
 
     $session = $this->getSession();
     $driver = $session->getDriver();
+    $this->overflowFindings = [];
 
     // Helper to capture full page for a given size and target directory.
-    $captureFullPage = function (int $width, int $height, string $targetDir, string $filenamePrefix) use ($session, $driver) {
+    $captureFullPage = function (int $width, int $height, bool $mobile, string $label, string $targetDir, string $filenamePrefix) use ($session, $driver) {
       \Drupal::service('file_system')->prepareDirectory($targetDir, FileSystemInterface::CREATE_DIRECTORY);
-      $driver->resizeWindow($width, $height, 'current');
+      $this->setViewport($width, $height, $mobile);
 
       $this->waitForStableRender();
 
@@ -254,6 +290,7 @@ JS;
       }
       $session->executeScript('window.scrollTo(0, 0);');
       $this->waitForStableRender();
+      $this->recordOverflow($label, $width);
 
       $pageHeight = $session->evaluateScript('return document.body.scrollHeight');
       $scrollPosition = 0;
@@ -284,6 +321,8 @@ JS;
       $captureFullPage(
         $this->desktopSize['width'],
         $this->desktopSize['height'],
+        FALSE,
+        'desktop',
         $desktopDir,
         $this->currentFeature . '-' . $name
       );
@@ -297,6 +336,8 @@ JS;
         $captureFullPage(
           $dimensions['width'],
           $dimensions['height'],
+          TRUE,
+          $deviceName,
           $mobileDir,
           $this->currentFeature . '-' . $name . '-' . $deviceName
         );
@@ -305,10 +346,189 @@ JS;
     }
 
     // Restore desktop size.
-    $session->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
+    $this->setViewport($this->desktopSize['width'], $this->desktopSize['height'], FALSE);
 
     $capturedTypes = !empty($captured) ? implode(', ', $captured) : 'none';
     echo "Screenshot saved: {$name} (captured: {$capturedTypes})\n";
+    $this->reportOverflow();
+  }
+
+  /**
+   * Fails when the page is wider than the current viewport.
+   *
+   * The screenshot steps run this check automatically for every captured
+   * size (see screenshot_context.horizontal_overflow); use this step to
+   * assert it at the current window size without taking a screenshot.
+   *
+   * @Then /^the page should not overflow horizontally$/
+   */
+  public function thePageShouldNotOverflowHorizontally(): void {
+    $finding = $this->horizontalOverflowFinding('current viewport');
+    if ($finding !== NULL) {
+      throw new \RuntimeException($finding);
+    }
+  }
+
+  /**
+   * Switches the browser to a viewport size.
+   *
+   * Desktop sizes resize the window. Mobile devices use Chrome's device
+   * emulation instead: a headed Chrome refuses to make its window narrower
+   * than roughly 500px, so resizing silently produced 500px "mobile"
+   * captures and layouts broken on real phones passed. The override is sent
+   * through chromedriver's CDP endpoint; other drivers fall back to resizing.
+   */
+  private function setViewport(int $width, int $height, bool $mobile): void {
+    $driver = $this->getSession()->getDriver();
+    if (!$mobile) {
+      $this->clearEmulation();
+      $driver->resizeWindow($width, $height, 'current');
+      return;
+    }
+    // The emulated viewport renders inside the real window, so keep the
+    // window at least as large as the device.
+    $driver->resizeWindow(max($this->desktopSize['width'], $width), max($this->desktopSize['height'], $height), 'current');
+    $applied = $this->cdp('Emulation.setDeviceMetricsOverride', [
+      'width' => $width,
+      'height' => $height,
+      'deviceScaleFactor' => 1,
+      'mobile' => TRUE,
+    ]);
+    if ($applied) {
+      $this->emulationActive = TRUE;
+      return;
+    }
+    $driver->resizeWindow($width, $height, 'current');
+  }
+
+  /**
+   * Removes the device-metrics override, if one is active.
+   */
+  private function clearEmulation(): void {
+    if ($this->emulationActive) {
+      $this->cdp('Emulation.clearDeviceMetricsOverride', []);
+      $this->emulationActive = FALSE;
+    }
+  }
+
+  /**
+   * Sends a Chrome DevTools Protocol command through chromedriver.
+   *
+   * @return bool
+   *   TRUE when chromedriver accepted the command, FALSE for any other
+   *   driver or on error.
+   */
+  private function cdp(string $command, array $params): bool {
+    $driver = $this->getSession()->getDriver();
+    if (!method_exists($driver, 'getWebDriverSession')) {
+      return FALSE;
+    }
+    $webDriverSession = $driver->getWebDriverSession();
+    if (!is_object($webDriverSession) || !method_exists($webDriverSession, 'getURL')) {
+      return FALSE;
+    }
+    $url = rtrim((string) $webDriverSession->getURL(), '/') . '/goog/cdp/execute';
+    $payload = json_encode(['cmd' => $command, 'params' => (object) $params]);
+    $handle = curl_init($url);
+    curl_setopt_array($handle, [
+      CURLOPT_POST => TRUE,
+      CURLOPT_POSTFIELDS => $payload,
+      CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8'],
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_TIMEOUT => 30,
+    ]);
+    $body = curl_exec($handle);
+    $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
+    curl_close($handle);
+    if ($body === FALSE || $status >= 400) {
+      return FALSE;
+    }
+    $decoded = json_decode((string) $body, TRUE);
+    // The legacy (JSON wire) protocol reports errors with a non-zero status.
+    return !(is_array($decoded) && isset($decoded['status']) && (int) $decoded['status'] !== 0);
+  }
+
+  /**
+   * Describes a horizontal overflow of the page, or NULL when it fits.
+   *
+   * Lists the outermost elements that stick out past the viewport, skipping
+   * anything inside a horizontally clipping or scrolling ancestor (a wide
+   * table in an overflow-x: auto wrapper is fine).
+   */
+  private function horizontalOverflowFinding(string $label): ?string {
+    $script = <<<'JS'
+return (function () {
+  var doc = document.documentElement;
+  var vw = doc.clientWidth;
+  var sw = Math.max(doc.scrollWidth, document.body ? document.body.scrollWidth : 0);
+  if (sw <= vw + 1) { return null; }
+  var clipped = function (el) {
+    for (var p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      var ox = getComputedStyle(p).overflowX;
+      if (ox === 'hidden' || ox === 'clip' || ox === 'auto' || ox === 'scroll') { return true; }
+    }
+    return false;
+  };
+  var sticksOut = function (el) { return el.getBoundingClientRect().right > vw + 1; };
+  var offenders = [];
+  var all = document.body.getElementsByTagName('*');
+  for (var i = 0; i < all.length; i++) {
+    var el = all[i];
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || !sticksOut(el) || clipped(el)) { continue; }
+    // Report the outermost offender only; its children stick out with it.
+    if (el.parentElement && el.parentElement !== document.body && sticksOut(el.parentElement)) { continue; }
+    var name = el.tagName.toLowerCase() + (el.id ? '#' + el.id : '');
+    var cls = (typeof el.className === 'string' ? el.className : '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+    if (cls.length) { name += '.' + cls.join('.'); }
+    offenders.push(name + ' (right edge ' + Math.round(r.right) + 'px, width ' + Math.round(r.width) + 'px)');
+  }
+  return { viewport: vw, scrollWidth: sw, offenders: offenders.slice(0, 8) };
+}())
+JS;
+    $result = $this->getSession()->evaluateScript($script);
+    if (!is_array($result)) {
+      return NULL;
+    }
+    $offenders = !empty($result['offenders']) ? implode('; ', $result['offenders']) : 'no unclipped element found';
+    return sprintf(
+      'Page overflows horizontally at %s: content is %dpx wide in a %dpx viewport. Sticking out: %s.',
+      $label,
+      (int) $result['scrollWidth'],
+      (int) $result['viewport'],
+      $offenders
+    );
+  }
+
+  /**
+   * Remembers an overflow finding for the size just captured.
+   */
+  private function recordOverflow(string $label, int $width): void {
+    if ($this->horizontalOverflow === 'off') {
+      return;
+    }
+    $finding = $this->horizontalOverflowFinding("{$label} ({$width}px)");
+    if ($finding !== NULL) {
+      $this->overflowFindings[] = $finding;
+    }
+  }
+
+  /**
+   * Throws or prints the findings collected during a screenshot step.
+   *
+   * Runs after every size was captured, so the artifact still contains the
+   * screenshots of the broken layout.
+   */
+  private function reportOverflow(): void {
+    if (!$this->overflowFindings) {
+      return;
+    }
+    $message = implode("\n", $this->overflowFindings);
+    $this->overflowFindings = [];
+    if ($this->horizontalOverflow === 'fail') {
+      throw new \RuntimeException($message);
+    }
+    echo "Warning: {$message}\n";
   }
 
   /**

@@ -18,7 +18,8 @@
         }
     },
     "require": {
-        "php": ">=7.2",
+        "php": ">=7.4",
+        "ext-curl": "*",
         "behat/behat": "^3.0.13",
         "behat/mink-extension": "^2.3.1"
     },
