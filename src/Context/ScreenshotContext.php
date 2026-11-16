@@ -180,6 +180,7 @@ JS;
 
     $session = $this->getSession();
     $driver = $session->getDriver();
+    $this->parkPointer();
 
     // Desktop screenshot.
     $driver->resizeWindow($this->desktopSize['width'], $this->desktopSize['height'], 'current');
@@ -230,6 +231,7 @@ JS;
 
     $session = $this->getSession();
     $driver = $session->getDriver();
+    $this->parkPointer();
 
     // Helper to capture full page for a given size and target directory.
     $captureFullPage = function (int $width, int $height, string $targetDir, string $filenamePrefix) use ($session, $driver) {
@@ -309,6 +311,59 @@ JS;
 
     $capturedTypes = !empty($captured) ? implode(', ', $captured) : 'none';
     echo "Screenshot saved: {$name} (captured: {$capturedTypes})\n";
+  }
+
+  /**
+   * Moves the mouse pointer off the page before capturing.
+   *
+   * The pointer stays where the last click happened, and after every scroll
+   * or resize Chrome hovers whatever ends up under it, so screenshots
+   * depended on the steps that ran before. Off the viewport nothing is
+   * hovered. Sent through chromedriver's CDP endpoint; a no-op elsewhere.
+   */
+  private function parkPointer(): void {
+    $this->cdp('Input.dispatchMouseEvent', [
+      'type' => 'mouseMoved',
+      'x' => -1,
+      'y' => -1,
+    ]);
+  }
+
+  /**
+   * Sends a Chrome DevTools Protocol command through chromedriver.
+   *
+   * @return bool
+   *   TRUE when chromedriver accepted the command, FALSE for any other
+   *   driver or on error.
+   */
+  private function cdp(string $command, array $params): bool {
+    $driver = $this->getSession()->getDriver();
+    if (!method_exists($driver, 'getWebDriverSession')) {
+      return FALSE;
+    }
+    $webDriverSession = $driver->getWebDriverSession();
+    if (!is_object($webDriverSession) || !method_exists($webDriverSession, 'getURL')) {
+      return FALSE;
+    }
+    $url = rtrim((string) $webDriverSession->getURL(), '/') . '/goog/cdp/execute';
+    $payload = json_encode(['cmd' => $command, 'params' => (object) $params]);
+    $handle = curl_init($url);
+    curl_setopt_array($handle, [
+      CURLOPT_POST => TRUE,
+      CURLOPT_POSTFIELDS => $payload,
+      CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8'],
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_TIMEOUT => 30,
+    ]);
+    $body = curl_exec($handle);
+    $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
+    curl_close($handle);
+    if ($body === FALSE || $status >= 400) {
+      return FALSE;
+    }
+    $decoded = json_decode((string) $body, TRUE);
+    // The legacy (JSON wire) protocol reports errors with a non-zero status.
+    return !(is_array($decoded) && isset($decoded['status']) && (int) $decoded['status'] !== 0);
   }
 
   /**

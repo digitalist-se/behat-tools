@@ -104,6 +104,7 @@ Notes:
 - One desktop screenshot is always taken using `desktop_size` (defaults to 1920x1080 if not set).
 - One additional screenshot is taken per entry in `mobile_devices`, saved under the `mobile_subfolder` using the device name in the filename.
 - If no `mobile_devices` are configured, only the desktop screenshot is produced.
+- Before capturing, the mouse pointer is moved off the page (Chrome only), so no element is drawn in its hover state because of where an earlier step clicked.
 
 Legacy configuration (backwards compatibility):
 ```yml
