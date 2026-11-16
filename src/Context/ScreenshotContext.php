@@ -212,6 +212,7 @@ JS;
 
     $driver = $this->getSession()->getDriver();
     $this->overflowFindings = [];
+    $this->parkPointer();
 
     // Desktop screenshot.
     $this->setViewport($this->desktopSize['width'], $this->desktopSize['height'], FALSE);
@@ -266,6 +267,7 @@ JS;
     $session = $this->getSession();
     $driver = $session->getDriver();
     $this->overflowFindings = [];
+    $this->parkPointer();
 
     // Helper to capture full page for a given size and target directory.
     $captureFullPage = function (int $width, int $height, bool $mobile, string $label, string $targetDir, string $filenamePrefix) use ($session, $driver) {
@@ -409,6 +411,22 @@ JS;
       $this->cdp('Emulation.clearDeviceMetricsOverride', []);
       $this->emulationActive = FALSE;
     }
+  }
+
+  /**
+   * Moves the mouse pointer off the page before capturing.
+   *
+   * The pointer stays where the last click happened, and after every scroll
+   * or resize Chrome hovers whatever ends up under it, so screenshots
+   * depended on the steps that ran before. Off the viewport nothing is
+   * hovered. Sent through chromedriver's CDP endpoint; a no-op elsewhere.
+   */
+  private function parkPointer(): void {
+    $this->cdp('Input.dispatchMouseEvent', [
+      'type' => 'mouseMoved',
+      'x' => -1,
+      'y' => -1,
+    ]);
   }
 
   /**
